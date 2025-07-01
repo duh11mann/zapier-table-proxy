@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     const tableId = "01JYW4BEJ0XTK9CYY469YP3PJ4"; // ← your actual table ID
     const zapierToken = process.env.ZAPIER_TABLES_TOKEN;
   
-    const url = `https://tables.zapier.com/api/v1/records?table_id=${tableId}&filter=token=${encodeURIComponent(token)}`;
+    const url = `https://tables.zapier.com/api/v1/records?table_id=${tableId}&filter=Token=${encodeURIComponent(token)}`;
   
     try {
         const response = await fetch(url, {
