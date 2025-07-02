@@ -1,16 +1,34 @@
 // api/prefill-callback.js
-
-const store = global.__PREFILL_STORE__ || {};
-global.__PREFILL_STORE__ = store;
-
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end("Method Not Allowed");
-
-  const { request_id, ...fields } = req.body;
-  if (!request_id) return res.status(400).json({ error: "Missing request_id" });
-
-  store[request_id] = fields;
-  console.log("📥 Stored prefill:", request_id, fields);
-
-  res.status(200).json({ status: "ok" });
-}
+function allowCORS(res) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  
+  export default async function handler(req, res) {
+    if (req.method === 'OPTIONS') { allowCORS(res); return res.status(200).end(); }
+    if (req.method !== 'POST')    { allowCORS(res); return res.status(405).end(); }
+  
+    const body = req.body || {};                 // Zap posts JSON
+  
+    // Build hidden inputs for every key/value
+    const inputs = Object.entries(body).map(
+      ([k, v]) =>
+        `<input type="hidden" name="${k}" value="${String(v).replace(/"/g,'&quot;')}">`
+    ).join('');
+  
+    // Auto-submit the form to the review page, adding ?prefill=true
+    const html = `
+      <!doctype html><html><body>
+        <form id="f" method="POST" action="/tax-planning-information-review?prefill=true">
+          ${inputs}
+        </form>
+        <script>document.getElementById('f').submit();</script>
+      </body></html>
+    `;
+  
+    allowCORS(res);
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(html);
+  }
+  
