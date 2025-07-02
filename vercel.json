@@ -1,7 +1,10 @@
 {
-  "functions": {
-    "api/prefill-request.js": {
-      "permissions": "public"
-    }
+    "version": 2,
+    "routes": [
+      {
+        "src": "/api/(.*)",
+        "dest": "/api/$1"
+      }
+    ]
   }
-}
+  
