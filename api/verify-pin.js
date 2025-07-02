@@ -1,8 +1,16 @@
 // api/verify-pin.js
 export default async function handler(req, res) {
-    /* --- 1. Only allow POST ------------------------------------------- */
+    /* --- 0. CORS pre-flight ------------------------------------------ */
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      return res.status(200).end();           //  ← OK for pre-flight
+    }
+  
+    /* --- 1. Only allow POST ------------------------------------------ */
     if (req.method !== 'POST') {
-      res.setHeader('Allow', 'POST');
+      res.setHeader('Allow', 'POST, OPTIONS');
       return res.status(405).end();
     }
   
@@ -11,7 +19,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'missing fields' });
     }
   
-    /* --- 2. Forward to Zapier ----------------------------------------- */
+    /* --- 2. Relay to Zapier ------------------------------------------ */
     const zapResp = await fetch(
       'https://hooks.zapier.com/hooks/catch/7685031/ub8z6ab/',
       {
@@ -25,7 +33,7 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: 'Zapier rejected PIN' });
     }
   
-    /* --- 3. Parse Zapier response if it sends JSON -------------------- */
+    /* --- 3. Optional JSON parse -------------------------------------- */
     let zapData = {};
     try {
       if (zapResp.headers.get('content-type')?.includes('json')) {
@@ -33,7 +41,7 @@ export default async function handler(req, res) {
       }
     } catch { /* ignore */ }
   
-    /* --- 4. Allow browser to read our JSON (CORS) --------------------- */
+    /* --- 4. CORS header for actual POST response --------------------- */
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(200).json({ status: 'ok', data: zapData });
   }
