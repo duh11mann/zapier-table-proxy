@@ -9,15 +9,12 @@ function allowCORS(res) {
     if (req.method === 'OPTIONS') { allowCORS(res); return res.status(200).end(); }
     if (req.method !== 'POST')    { allowCORS(res); return res.status(405).end(); }
   
-    const body = req.body || {};                      // Zap posts JSON
-  
-    // build hidden inputs for every key
+    const body = req.body || {};      // Zapier sends JSON
     const inputs = Object.entries(body)
       .map(([k, v]) =>
         `<input type="hidden" name="${k}" value="${String(v).replace(/"/g,'&quot;')}">`
       ).join('');
   
-    // immediately re-POST the same payload back to the page
     const html = `
       <!doctype html><html><body>
         <form id="f" method="POST"
