@@ -5,28 +5,15 @@ function allowCORS(res) {
   }
   
   export default async function handler(req, res) {
-    // 0️⃣  pre-flight
-    if (req.method === 'OPTIONS') {
-      allowCORS(res);
-      return res.status(200).end();
-    }
+    if (req.method === 'OPTIONS') { allowCORS(res); return res.status(200).end(); }
   
-    // 1️⃣  POST only
-    if (req.method !== 'POST') {
-      allowCORS(res);
-      res.setHeader('Allow', 'POST, OPTIONS');
-      return res.status(405).end();
-    }
+    if (req.method !== 'POST')    { allowCORS(res); return res.status(405).end(); }
   
     const { token } = req.body ?? {};
-    if (!token) {
-      allowCORS(res);
-      return res.status(400).json({ error: 'missing token' });
-    }
+    if (!token) { allowCORS(res); return res.status(400).json({ error: 'missing token' }); }
   
-    // 2️⃣  generate request_id (your existing logic)
-    const request_id = crypto.randomUUID();
-    // … store / lookup row etc …
+    const request_id = crypto.randomUUID();   // or whatever logic you use
+    /*  … store / fetch row, etc. …  */
   
     allowCORS(res);
     return res.status(200).json({ request_id });
