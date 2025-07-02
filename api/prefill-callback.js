@@ -1,17 +1,16 @@
 // api/prefill-callback.js
-function allowCORS(res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+function cors(res){
+    res.setHeader('Access-Control-Allow-Origin','*');
+    res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers','Content-Type');
   }
+  export default async function handler(req,res){
+    if (req.method === 'OPTIONS'){ cors(res); return res.status(200).end(); }
+    if (req.method !== 'POST'){     cors(res); return res.status(405).end(); }
   
-  export default async function handler(req, res) {
-    if (req.method === 'OPTIONS') { allowCORS(res); return res.status(200).end(); }
-    if (req.method !== 'POST')    { allowCORS(res); return res.status(405).end(); }
-  
-    const body = req.body || {};      // Zapier sends JSON
+    const body   = req.body || {};
     const inputs = Object.entries(body)
-      .map(([k, v]) =>
+      .map(([k,v]) =>
         `<input type="hidden" name="${k}" value="${String(v).replace(/"/g,'&quot;')}">`
       ).join('');
   
@@ -25,8 +24,8 @@ function allowCORS(res) {
       </body></html>
     `;
   
-    allowCORS(res);
-    res.setHeader('Content-Type', 'text/html');
+    cors(res);
+    res.setHeader('Content-Type','text/html');
     res.status(200).send(html);
   }
   
