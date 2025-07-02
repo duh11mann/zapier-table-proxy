@@ -1,53 +1,45 @@
-/**
- * /api/prefill-result
- * -------------------
- * Looks up the pre-fill row for {token, request_id}.
- * If the row hasn’t arrived yet we return 202 so the browser can poll again.
- */
+// /api/prefill-result.js
+// ------------------------------------------------------------------
+// 1️⃣  Small in-memory KV store shared by all invocations
+const store = global.__PREFILL_STORE__ ||= {};
 
-/* ─── in-memory store (demo only) ─── */
-const store = global.__PREFILL_STORE__ || (global.__PREFILL_STORE__ = {});
-
-/* ----------  CORS helper ---------- */
+// 2️⃣  Helper: universal CORS
 function allowCORS(res) {
-  res.setHeader("Access-Control-Allow-Origin",  "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader('Access-Control-Allow-Origin',  '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
 export default async function handler(req, res) {
-  /* 0️⃣  Pre-flight */
-  if (req.method === "OPTIONS") {
+  /* ── OPTIONS pre-flight ────────────────────────────────────────── */
+  if (req.method === 'OPTIONS') {
     allowCORS(res);
     return res.status(200).end();
   }
 
-  /* 1️⃣  POST only */
-  if (req.method !== "POST") {
+  /* ── POST only ─────────────────────────────────────────────────── */
+  if (req.method !== 'POST') {
     allowCORS(res);
-    res.setHeader("Allow", "POST, OPTIONS");
     return res.status(405).end();
   }
 
-  /* 2️⃣  Validate body */
-  const { token, request_id } = req.body ?? {};
-  if (!token || !request_id) {
+  /* ── read JSON body instead of query-string ────────────────────── */
+  const { request_id } = req.body ?? {};
+  if (!request_id) {
     allowCORS(res);
-    return res.status(400).json({ error: "missing token or request_id" });
+    return res.status(400).json({ error: 'missing request_id' });
   }
 
-  /* 3️⃣  Look-up */
+  /* ── look up the row that Zap B wrote in /api/prefill-callback ─── */
   const row = store[request_id];
-
-  /* 4️⃣  Reply */
-  allowCORS(res);
+  allowCORS(res);                           // <- always set before responding
 
   if (!row) {
-    return res.status(202).json({ status: "pending" });
+    // Still waiting for Zap B? 202 = “accepted, processing”
+    return res.status(202).json({ status: 'pending' });
   }
 
-  // Optional: one-time use
+  // one-shot: remove so the same link can’t be reused indefinitely
   delete store[request_id];
-
-  return res.status(200).json(row);
+  return res.status(200).json({ status: 'ready', data: row });
 }
