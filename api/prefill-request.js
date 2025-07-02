@@ -1,45 +1,45 @@
 // api/prefill-request.js
 
+import crypto from "crypto";
+
 const store = global.__PREFILL_STORE__ || {};
 global.__PREFILL_STORE__ = store;
 
 export default async function handler(req, res) {
-  // Set CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "*"); // You can change "*" to your domain
+  // CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // Handle preflight requests
+  // Handle preflight
   if (req.method === "OPTIONS") {
-    return res.status(200).end();
+    return res.status(200).end(); // Allow the preflight
   }
 
-  // Only allow POST for actual data
   if (req.method !== "POST") {
     return res.status(405).end("Method Not Allowed");
   }
 
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ error: "Missing token" });
+  }
+
+  const request_id = crypto.randomUUID();
+  store[request_id] = null; // Track the request
+
+  const zapHookUrl = "https://hooks.zapier.com/hooks/catch/7685031/ubk1cw4/";
+  const callback_url = `https://${req.headers.host}/api/prefill-callback`;
+
   try {
-    const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ error: "Missing token" });
-    }
-
-    const request_id = crypto.randomUUID();
-    store[request_id] = null; // Reserve a placeholder
-
-    const zapHookUrl = "https://hooks.zapier.com/hooks/catch/7685031/ubk1cw4/";
-    const callback_url = `https://${req.headers.host}/api/prefill-callback`;
-
     await fetch(zapHookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, callback_url, request_id })
+      body: JSON.stringify({ token, callback_url, request_id }),
     });
-
-    return res.status(202).json({ request_id });
-  } catch (error) {
-    console.error("prefill-request error:", error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    res.status(202).json({ request_id });
+  } catch (err) {
+    console.error("Error posting to Zapier:", err);
+    res.status(500).json({ error: "Failed to trigger Zap" });
   }
 }
