@@ -1,22 +1,30 @@
-// api/prefill-callback.js
-function allowCORS(res) {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+// api/prefill-callback.js  (CommonJS + CORS)
+
+const { kv } = require('@vercel/kv');
+
+function allow(res) {
+  res.setHeader('Access-Control-Allow-Origin',  '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+module.exports = async function handler(req, res) {
+  if (req.method === 'OPTIONS') { allow(res); return res.status(200).end(); }
+  if (req.method !== 'POST')    { allow(res); return res.status(405).end(); }
+
+  const row = req.body ?? {};
+  const { request_id } = row || {};
+  if (!request_id) {
+    allow(res); return res.status(400).json({ error: 'missing request_id' });
   }
-  
-  const store = global.__PREFILL_STORE__ || (global.__PREFILL_STORE__ = {});
-  
-  export default async function handler(req, res) {
-    if (req.method === "OPTIONS") { allowCORS(res); return res.status(200).end(); }
-    if (req.method !== "POST")    { allowCORS(res); return res.status(405).end(); }
-  
-    const { request_id, ...row } = req.body ?? {};
-    if (!request_id) { allowCORS(res); return res.status(400).json({ error: "missing request_id" }); }
-  
-    store[request_id] = row;             // save the whole row for the review page
-  
-    allowCORS(res);
-    res.status(200).json({ status: "ok" });
+
+  try {
+    await kv.set(request_id, row, { ex: 900 });   // 15‑minute TTL
+    allow(res);
+    return res.status(200).json({ status: 'ok' });
+  } catch (err) {
+    console.error('[prefill-callback] fatal:', err);
+    allow(res);
+    return res.status(500).json({ error: 'internal', detail: String(err) });
   }
-  
+};
