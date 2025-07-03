@@ -1,0 +1,23 @@
+{
+  "name": "vercel-prefill-api",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/duh11mann/zapier-table-proxy.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/duh11mann/zapier-table-proxy/issues"
+  },
+  "homepage": "https://github.com/duh11mann/zapier-table-proxy#readme",
+  "description": "",
+  "dependencies": {
+    "@vercel/kv": "^3.0.0"
+  }
+}
