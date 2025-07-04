@@ -1,85 +1,59 @@
-/**
- * /api/verify-pin.js
- * Node-based Vercel Serverless Function
- *   POST   → verify 6-digit PIN stored in Zapier Storage
- *   OPTIONS → CORS pre-flight
- *
- * Env vars required:
- *   ZAPIER_STORE_SECRET   – same secret used when writing the record
- *   ALLOWED_ORIGIN        – e.g. https://synergosadvice.com  (or * for testing)
- */
+const SECRET = process.env.ZAPIER_STORE_SECRET;
+const BASE   = "https://store.zapier.com/api/records";
 
 export default async function handler(req, res) {
   const ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 
-  /* ──────────────────────────────────────────────
-     1.  CORS pre-flight
-  ────────────────────────────────────────────── */
+  // ── CORS pre-flight
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Origin",  ORIGIN);
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    return res.status(204).end();                 // no body
+    return res.status(204).end();
   }
-
-  /* ──────────────────────────────────────────────
-     2.  Guard other verbs
-  ────────────────────────────────────────────── */
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST, OPTIONS");
     return res.status(405).end("Method Not Allowed");
   }
 
-  /* ──────────────────────────────────────────────
-     3.  Parse JSON body
-  ────────────────────────────────────────────── */
+  // ── Body
   const { token = "", pin = "" } = req.body || {};
   if (!token || !/^\d{6}$/.test(pin)) {
     res.setHeader("Access-Control-Allow-Origin", ORIGIN);
     return res.status(400).end("Bad Request");
   }
 
-  /* ──────────────────────────────────────────────
-     4.  Fetch stored record from Zapier Storage
-  ────────────────────────────────────────────── */
-  const url = `https://store.zapier.com/api/records/${encodeURIComponent(
-    token
-  )}?secret=${process.env.ZAPIER_STORE_SECRET}`;
-
-  const zr = await fetch(url);
-  if (!zr.ok) {
+  // ── Fetch record
+  const r = await fetch(
+    `${BASE}?secret=${SECRET}&key=${encodeURIComponent(token)}`
+  );
+  if (!r.ok) {
+    res.setHeader("Access-Control-Allow-Origin", ORIGIN);
+    return res.status(401).end("Unauthorized");
+  }
+  const data   = await r.json();          // { "<token>": {...} }
+  const record = data[token];
+  if (!record) {
     res.setHeader("Access-Control-Allow-Origin", ORIGIN);
     return res.status(401).end("Unauthorized");
   }
 
-  const { pin: storedPin, created_at } = await zr.json();
-
-  /* ──────────────────────────────────────────────
-     5.  Optional expiry (15-minute TTL)
-  ────────────────────────────────────────────── */
-  const ttlMs = 15 * 60 * 1000;
-  if (Date.now() - Date.parse(created_at) > ttlMs) {
-    res.setHeader("Access-Control-Allow-Origin", ORIGIN);
-    return res.status(401).end("Expired");
-  }
-
-  /* ──────────────────────────────────────────────
-     6.  Constant-time comparison
-  ────────────────────────────────────────────── */
-  const valid =
-    pin.length === storedPin.length &&
-    [...pin].every((c, i) => c === storedPin[i]);
-
-  if (!valid) {
+  // ── TTL + PIN
+  const expired =
+    Date.now() - Date.parse(record.created_at || 0) > 15 * 60 * 1000;
+  if (expired || String(pin) !== String(record.pin)) {
     res.setHeader("Access-Control-Allow-Origin", ORIGIN);
     return res.status(401).end("Unauthorized");
   }
 
-  /* ──────────────────────────────────────────────
-     7.  Success → delete record & respond
-  ────────────────────────────────────────────── */
-  await fetch(url, { method: "DELETE" }).catch(() => {});
+  // ── Delete key so it can’t be reused
+  await fetch(`${BASE}?secret=${SECRET}`, {
+    method : "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body   : JSON.stringify({ [token]: null })
+  }).catch(() => {});
 
+  // ── Success
   res.setHeader("Access-Control-Allow-Origin", ORIGIN);
   res.setHeader("Content-Type", "application/json");
   return res.status(200).json({ ok: true });
