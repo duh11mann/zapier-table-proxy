@@ -1,6 +1,4 @@
-// api/prefill-result.js  (CommonJS + CORS)
-
-const { kv } = require('@vercel/kv');       // ← CJS import
+const { kv } = require('@vercel/kv');
 
 function allow(res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
@@ -9,30 +7,19 @@ function allow(res) {
 }
 
 module.exports = async function handler(req, res) {
-  /* CORS pre‑flight */
   if (req.method === 'OPTIONS') { allow(res); return res.status(200).end(); }
   if (req.method !== 'POST')    { allow(res); return res.status(405).end(); }
 
-  const { request_id } = req.body ?? {};
-  if (!request_id) {
+  const { token = '', request_id = '' } = req.body ?? {};
+  if (!token || !request_id) {
     allow(res);
-    return res.status(400).json({ error: 'missing request_id' });
+    return res.status(400).json({ error: 'missing-token-or-request_id' });
   }
 
-  try {
-    const row = await kv.get(request_id);      // null if not ready
-    allow(res);
+  const key = `${token}:${request_id}`;            // 🔑 composite
+  const row = await kv.get(key);
 
-    if (!row) {
-      return res.status(202).json({ status: 'pending' });
-    }
-
-    /* one‑time read */
-    await kv.del(request_id);
-    return res.status(200).json(row);          // { base_salary_estimate: … }
-  } catch (err) {
-    console.error('[prefill-result] fatal:', err);
-    allow(res);
-    return res.status(500).json({ error: 'internal', detail: String(err) });
-  }
+  allow(res);
+  if (!row) return res.status(202).json({ status: 'pending' });
+  return res.status(200).json(row);
 };
