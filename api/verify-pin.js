@@ -1,4 +1,4 @@
-// /api/verify-pin.js  – Vercel (Edge/Node)
+// /api/verify-pin.js   (Vercel)
 
 function allowCORS(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -7,49 +7,45 @@ function allowCORS(res) {
 }
 
 export default async function handler(req, res) {
-  /* ── CORS pre-flight ─────────────────────────────────────────── */
+  /* CORS pre-flight */
   if (req.method === 'OPTIONS') {
     allowCORS(res);
     return res.status(200).end();
   }
-
-  /* ── POST only ───────────────────────────────────────────────── */
   if (req.method !== 'POST') {
     allowCORS(res);
-    return res.status(405).end();                // Method Not Allowed
+    return res.status(405).end();
   }
 
-  /* ── basic validation ───────────────────────────────────────── */
   const { token, pin, request_id } = req.body ?? {};
   if (!token || !pin || !request_id) {
     allowCORS(res);
     return res.status(400).json({ error: 'missing fields' });
   }
 
-  /* ── relay to Zapier Verify-PIN hook ────────────────────────── */
-  try {
-    /**  Replace with *your* Catch-Hook URL for the Verify-PIN Zap  */
-    const zapHook =
-      'https://hooks.zapier.com/hooks/catch/7685031/ub8z6ab/';
+  /* ── relay to your Verify-PIN Zap ─────────────────────────── */
+  const zapHook = 'https://hooks.zapier.com/hooks/catch/7685031/ub8z6ab/';
 
-    const zapResp = await fetch(zapHook, {
+  let ok = false;
+  try {
+    const zap = await fetch(zapHook, {
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body   : JSON.stringify({ token, pin, request_id })
     });
 
-    /* Always set CORS headers before any return */
-    allowCORS(res);
+    const body = await zap.json().catch(() => ({}));
+    ok = body.ok === true;         // Zap says match?
 
-    /* Forward Zapier’s status code so the browser knows pass/fail */
-    if (zapResp.ok) {
-      return res.status(200).json({ ok: true });
+    allowCORS(res);
+    if (ok) {
+      return res.status(200).json({ ok:true });
     }
-    return res.status(401).json({ ok: false, reason: 'invalid_pin' });
+    return res.status(401).json({ ok:false, reason:'invalid_pin' });
 
   } catch (err) {
     console.error('verify-pin relay failed:', err);
     allowCORS(res);
-    return res.status(502).json({ error: 'zapier_unreachable' });
+    return res.status(502).json({ ok:false, reason:'zap_failed' });
   }
 }
