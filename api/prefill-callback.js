@@ -1,5 +1,4 @@
-// api/prefill‑callback.js   (CommonJS)
-
+// CommonJS + CORS
 const { kv } = require('@vercel/kv');
 
 function allow(res) {
@@ -13,19 +12,19 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST')    { allow(res); return res.status(405).end(); }
 
   const row = req.body ?? {};
-  const { token, request_id } = row;
+  const { token, request_id } = row || {};
   if (!token || !request_id) {
     allow(res);
-    return res.status(400).json({ error: 'missing‑token‑or‑request_id' });
+    return res.status(400).json({ error: 'missing-token-or-request_id' });
   }
 
   try {
-    const key = `${token}:${request_id}`;         // ←–––– use same key
-    await kv.set(key, row, { ex: 900 });          // 15‑minute TTL
+    // 🔑  *** SAME COMPOSITE KEY EVERYWHERE ***
+    await kv.set(`${token}:${request_id}`, row, { ex: 900 });   // 15-min TTL
     allow(res);
     return res.status(200).json({ status: 'ok' });
   } catch (err) {
-    console.error('[prefill‑callback] fatal:', err);
+    console.error('[prefill-callback] fatal:', err);
     allow(res);
     return res.status(500).json({ error: 'internal', detail: String(err) });
   }
