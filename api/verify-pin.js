@@ -1,5 +1,4 @@
-// /api/verify-pin.js  (Vercel)
-
+// /api/verify-pin.js  – copy ⇣ exactly
 function allowCORS(res) {
   res.setHeader("Access-Control-Allow-Origin",  "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -7,23 +6,24 @@ function allowCORS(res) {
 }
 
 export default async function handler(req, res) {
-  /* ── CORS pre-flight ───────────────────────────────────────────── */
+  /* ── CORS pre-flight ────────────────────────────────────────────── */
   if (req.method === "OPTIONS") {
     allowCORS(res);
     return res.status(200).end();
   }
   if (req.method !== "POST") {
     allowCORS(res);
-    return res.status(405).end();
+    return res.status(405).end();          // Method Not Allowed
   }
 
+  /* ── basic validation ───────────────────────────────────────────── */
   const { token, pin, request_id } = req.body ?? {};
   if (!token || !pin || !request_id) {
     allowCORS(res);
     return res.status(400).json({ error: "missing fields" });
   }
 
-  /* ── Relay to Verify-PIN Zap ───────────────────────────────────── */
+  /* ── relay to Verify-PIN Zap ────────────────────────────────────── */
   const zapHook = "https://hooks.zapier.com/hooks/catch/7685031/ub8z6ab/";
 
   try {
@@ -33,14 +33,18 @@ export default async function handler(req, res) {
       body   : JSON.stringify({ token, pin, request_id })
     });
 
-    const body = await zapResp.json().catch(() => ({}));
+    /* ── read Zapier reply – it may be text/plain 'true' ──────────── */
+    let ok = false;
+    const ctype = zapResp.headers.get("content-type") || "";
+    if (ctype.includes("application/json")) {
+      const body = await zapResp.json().catch(() => ({}));
+      ok = body === true || body.ok === true || body.Ok === true;
+    } else {
+      const text = (await zapResp.text()).trim();
+      ok = text === "true";
+    }
 
-    /* ----------------------------------------------------------------
-       Accept either {"ok":true}  or {"Ok":true} from the Zap
-       (Zapier’s UI often title-cases keys when displaying them)
-       -------------------------------------------------------------- */
-       const ok = body === true || body.ok === true || body.Ok === true;
-
+    /* ── send result back to the browser ─────────────────────────── */
     allowCORS(res);
     if (ok) {
       return res.status(200).json({ ok: true });
