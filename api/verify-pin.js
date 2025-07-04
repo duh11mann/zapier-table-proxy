@@ -39,7 +39,7 @@ export default async function handler(req, res) {
        Accept either {"ok":true}  or {"Ok":true} from the Zap
        (Zapier’s UI often title-cases keys when displaying them)
        -------------------------------------------------------------- */
-    const ok = body.ok === true || body.Ok === true;
+       const ok = body === true || body.ok === true || body.Ok === true;
 
     allowCORS(res);
     if (ok) {
