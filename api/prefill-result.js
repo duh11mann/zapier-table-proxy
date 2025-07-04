@@ -1,25 +1,48 @@
-const { kv } = require('@vercel/kv');
+// api/prefill-result.js   • Node 18 on Vercel
 
-function allow(res) {
-  res.setHeader('Access-Control-Allow-Origin',  '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+const { randomUUID } = require("crypto");
+
+const SECRET = process.env.ZAPIER_STORE_SECRET;
+const BASE   = "https://store.zapier.com/api/records";
+
+/* CORS helper */
+function cors(res) {
+  res.setHeader("Access-Control-Allow-Origin",  "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
 module.exports = async function handler(req, res) {
-  if (req.method === 'OPTIONS') { allow(res); return res.status(200).end(); }
-  if (req.method !== 'POST')    { allow(res); return res.status(405).end(); }
+  /* ── CORS pre-flight ── */
+  if (req.method === "OPTIONS") { cors(res); return res.status(200).end(); }
+  if (req.method !== "POST")    { cors(res); return res.status(405).end(); }
 
-  const { token = '', request_id = '' } = req.body ?? {};
-  if (!token || !request_id) {
-    allow(res);
-    return res.status(400).json({ error: 'missing-token-or-request_id' });
+  const { token = "", request_id: reqIdIn } = req.body ?? {};
+  if (!token) { cors(res); return res.status(400).json({ error: "missing token" }); }
+
+  const request_id = reqIdIn || randomUUID();
+
+  /* ── Fetch record from Zapier Storage ── */
+  const zr = await fetch(`${BASE}?secret=${SECRET}&key=${encodeURIComponent(token)}`);
+  if (!zr.ok) { cors(res); return res.status(401).end(); }          // 403 / 404
+
+  const data   = await zr.json();           // { "<token>": value }
+  let   record = data[token];
+
+  /* Parse stringified JSON if needed */
+  if (typeof record === "string") {
+    try { record = JSON.parse(record); } catch { record = null; }
+  }
+  if (!record) { cors(res); return res.status(401).end(); }
+
+  /* Wait until verify-pin has removed the pin */
+  if ("pin" in record) {
+    cors(res);
+    return res.status(202).json({ status: "pending", request_id });
   }
 
-  const key = `${token}:${request_id}`;            // 🔑 composite
-  const row = await kv.get(key);
-
-  allow(res);
-  if (!row) return res.status(202).json({ status: 'pending' });
-  return res.status(200).json(row);
+  /* Success: return the pre-fill fields */
+  const { created_at, expires_at, ...prefill } = record;  // drop housekeeping
+  cors(res);
+  return res.status(200).json({ request_id, ...prefill });
 };
