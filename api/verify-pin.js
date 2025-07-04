@@ -1,48 +1,65 @@
-// /api/verify-pin.js  — replace the whole file with this
-function allowCORS(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-}
+// File: /api/verify-pin.js
+import { NextResponse } from "next/server";
 
-export default async function handler(req, res) {
-  /* CORS pre-flight */
-  if (req.method === "OPTIONS") { allowCORS(res); return res.status(200).end(); }
-  if (req.method !== "POST")    { allowCORS(res); return res.status(405).end(); }
+/**
+ * Vercel edge-runtime route – confirms a 6-digit PIN stored in Zapier Storage.
+ * Expects POST  { token: "abc123", pin: "987654" }
+ */
+export const config = {
+  runtime: "edge",                  // super-fast cold starts
+  regions: ["iad1", "pdx1"]         // pick a couple close to your users
+};
 
-  const { token, pin, request_id } = req.body ?? {};
-  if (!token || !pin || !request_id) {
-    allowCORS(res);
-    return res.status(400).json({ error: "missing fields" });
-  }
-
-  /* relay to Verify-PIN Zap */
-  const zapHook = "https://hooks.zapier.com/hooks/catch/7685031/ub8z6ab/";
+export async function POST(request) {
   try {
-    const zap = await fetch(zapHook, {
-      method : "POST",
-      headers: { "Content-Type": "application/json" },
-      body   : JSON.stringify({ token, pin, request_id })
-    });
-
-    /* ←─ NEW: accept text/plain "true" *or* JSON {ok:true}/{Ok:true} */
-    let ok = false;
-    const ctype = zap.headers.get("content-type") || "";
-    if (ctype.includes("application/json")) {
-      const body = await zap.json().catch(() => ({}));
-      ok = body === true || body.ok === true || body.Ok === true;
-    } else {
-      const text = (await zap.text()).trim();
-      ok = text === "true";
+    // ----- 1. CORS -----
+    const allowedOrigin = process.env.ALLOWED_ORIGIN;
+    const origin = request.headers.get("origin") ?? "";
+    if (origin !== allowedOrigin) {
+      return new NextResponse("Forbidden", { status: 403 });
     }
 
-    allowCORS(res);
-    if (ok) return res.status(200).json({ ok: true });
-    return res.status(401).json({ ok: false, reason: "invalid_pin" });
+    // ----- 2. Parse body -----
+    const { token = "", pin = "" } = await request.json();
+    if (!token || !/^\d{6}$/.test(pin)) {
+      return new NextResponse("Bad Request", { status: 400 });
+    }
 
+    // ----- 3. Pull record from Zapier Storage -----
+    const url = `https://store.zapier.com/api/records/${encodeURIComponent(
+      token
+    )}?secret=${process.env.ZAPIER_STORE_SECRET}`;
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      // No record, expired, or wrong secret.
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    const { pin: storedPin, created_at } = await res.json();
+
+    // ----- 4. Optional: Expire after 15 minutes -----
+    const ageMs = Date.now() - Date.parse(created_at);
+    const fifteenMinutes = 15 * 60 * 1000;
+    if (ageMs > fifteenMinutes) {
+      return new NextResponse("Expired", { status: 401 });
+    }
+
+    // ----- 5. Compare pins (constant-time) -----
+    const isValid =
+      pin.length === storedPin.length &&
+      [...pin].every((c, i) => c === storedPin[i]);
+
+    if (!isValid) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    // ----- 6. Success → delete the record to prevent reuse -----
+    await fetch(url, { method: "DELETE" }).catch(() => {});
+
+    return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("verify-pin relay failed:", err);
-    allowCORS(res);
-    return res.status(502).json({ ok: false, reason: "zap_failed" });
+    console.error("verify-pin error:", err);
+    return new NextResponse("Server Error", { status: 500 });
   }
 }
