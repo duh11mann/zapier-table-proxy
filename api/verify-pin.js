@@ -5,43 +5,54 @@ function allowCORS(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
+/* ─────────────────────────────────────────────────────────────── */
+
 export default async function handler(req, res) {
-  /* --- CORS pre-flight ------------------------------------------------ */
+  /* --- CORS pre-flight ---------------------------------------- */
   if (req.method === 'OPTIONS') {
     allowCORS(res);
     return res.status(200).end();
   }
 
-  /* --- POST only ------------------------------------------------------ */
+  /* --- POST only --------------------------------------------- */
   if (req.method !== 'POST') {
     allowCORS(res);
     return res.status(405).end();
   }
 
-  /* --- validate body -------------------------------------------------- */
+  /* --- validate body ----------------------------------------- */
   const { token, pin, request_id } = req.body ?? {};
   if (!token || !pin || !request_id) {
     allowCORS(res);
     return res.status(400).json({ error: 'missing fields' });
   }
 
-  /* --- relay to Zapier ----------------------------------------------- */
-  const resp = await fetch(
-    'https://hooks.zapier.com/hooks/catch/7685031/ub8z6ab/',
-    {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ access: token, pin, request_id })
+  /* ════════════ NEW – fetch record from Zapier Storage ════════ */
+  try {
+    const storePath = process.env.ZAPIER_STORE_ID
+      ? `stores/${process.env.ZAPIER_STORE_ID}`
+      : 'records';                                // default store
+
+    const url =
+      `https://store.zapier.com/api/${storePath}/${encodeURIComponent(request_id)}` +
+      `?secret=${process.env.ZAPIER_STORE_SECRET}`;
+
+    const zapResp = await fetch(url);
+    if (!zapResp.ok) throw new Error(`Storage lookup ${zapResp.status}`);
+
+    const stored = await zapResp.json();          // { pin: '123456', ... }
+    const storedPin = stored.pin ?? '';
+
+    /* --- compare pins ---------------------------------------- */
+    allowCORS(res);                               // always set CORS
+    if (pin === storedPin) {
+      return res.status(200).json({ ok: true });
     }
-  );
+    return res.status(401).json({ ok: false, reason: 'invalid_pin' });
 
-  allowCORS(res);                            // <- IMPORTANT: always set
-  if (!resp.ok) {
-    return res.status(502).json({ error: 'Zapier error', status: resp.status });
+  } catch (err) {
+    console.error('verify-pin lookup failed:', err);
+    allowCORS(res);
+    return res.status(502).json({ error: 'lookup_failed' });
   }
-
-  const data = resp.headers.get('content-type')?.includes('json')
-             ? await resp.json()
-             : {};
-  return res.status(200).json({ status: 'ok', data });
 }
